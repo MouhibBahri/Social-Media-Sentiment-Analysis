@@ -1,3 +1,23 @@
+# Social Sentiment Analysis — Big Data Pipeline
+ 
+A real-time and historical sentiment analysis platform built on a Lambda Architecture. The system streams live posts from Bluesky, classifies their sentiment using a pretrained NLP model, and serves both live and historical dashboards.
+ 
+---
+ 
+## Overview
+ 
+This project ingests a continuous stream of Bluesky posts, runs sentiment classification (positive / negative / neutral) on each post, and stores the results for two types of analysis:
+ 
+- **Real-time**: what is the public feeling *right now*, updated every few seconds
+- **Historical**: how has sentiment evolved over days and weeks, computed nightly
+---
+ 
+## Architecture
+
+![Architecture Diagram](./images/architecture.png)
+
+
+
 ## Bluesky Bridge (`bluesky_api.py`)
 
 A lightweight TCP bridge that connects the [Bluesky Jetstream](https://docs.bsky.app/docs/advanced-guides/firehose) WebSocket to a local socket server, making the stream consumable by Spark (or any TCP client).
