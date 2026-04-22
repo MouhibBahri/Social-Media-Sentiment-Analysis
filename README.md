@@ -15,3 +15,16 @@ Then in a second terminal, connect with netcat to see live posts stream in:
 ```bash
 nc localhost 9999
 ```
+## Batch Layer (Hadoop HDFS)
+
+### 1. Start bridge on your machine
+python bluesky_bridge.py
+
+### 2. Start the Hadoop cluster + collector
+docker-compose up -d
+
+### 3. Check the NameNode Web UI
+open http://localhost:9870
+
+### 4. Browse what's been saved in HDFS
+docker exec namenode hdfs dfs -ls -R /bluesky/raw

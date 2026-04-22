@@ -1,0 +1,96 @@
+x-hadoop-common: &hadoop-common
+  image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+  env_file:
+    - hadoop.env
+  networks:
+    - hadoop-net
+
+services:
+
+  # ─── HDFS NameNode (master) ───────────────────────────────────────────────
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    hostname: namenode
+    ports:
+      - "9870:9870"
+      - "8020:8020"
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    environment:
+      CLUSTER_NAME: bluesky-hadoop
+    env_file:
+      - hadoop.env
+    networks:
+      - hadoop-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─── HDFS DataNode 1 (worker) ─────────────────────────────────────────────
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode1
+    hostname: datanode1
+    ports:
+      - "9864:9864"   # DataNode HTTP — needed for WebHDFS redirect
+    volumes:
+      - datanode1_data:/hadoop/dfs/data
+    env_file:
+      - hadoop.env
+    networks:
+      - hadoop-net
+    depends_on:
+      namenode:
+        condition: service_healthy
+
+  # ─── HDFS DataNode 2 (worker) ─────────────────────────────────────────────
+  datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode2
+    hostname: datanode2
+    ports:
+      - "9865:9864"   # mapped to 9865 on host to avoid conflict with datanode1
+    volumes:
+      - datanode2_data:/hadoop/dfs/data
+    env_file:
+      - hadoop.env
+    networks:
+      - hadoop-net
+    depends_on:
+      namenode:
+        condition: service_healthy
+
+  # ─── HDFS Collector (bridge → HDFS) ───────────────────────────────────────
+  hdfs-collector:
+    image: python:3.11-slim
+    container_name: hdfs-collector
+    network_mode: host
+    volumes:
+      - ./hdfs_collector.py:/app/hdfs_collector.py
+    working_dir: /app
+    environment:
+      BRIDGE_HOST: localhost
+      BRIDGE_PORT: "9999"
+      HDFS_HOST: localhost
+      HDFS_PORT: "9870"
+      HDFS_DIR: /bluesky/raw
+    command: >
+      bash -c "pip install hdfs requests --quiet &&
+               python hdfs_collector.py"
+    depends_on:
+      namenode:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  namenode_data:
+  datanode1_data:
+  datanode2_data:
+
+networks:
+  hadoop-net:
+    driver: bridge
