@@ -1,63 +1,87 @@
-# 🌊 Real-Time Bluesky Streaming Data Pipeline (HDFS + Spark)
+# 🌐 Social Sentiment Analysis — Big Data Streaming Pipeline
 
-A distributed real-time data engineering pipeline that ingests live posts from Bluesky, streams them through a custom TCP bridge, stores them in HDFS, and processes them using Apache Spark Structured Streaming.
-
----
-
-## 🚀 Overview
-
-This project demonstrates a full end-to-end real-time data pipeline:
-
-Bluesky API  
-→ WebSocket Bridge (Python)  
-→ TCP Socket Stream  
-→ HDFS Collector (Python)  
-→ HDFS (Data Lake storage)  
-→ Apache Spark Structured Streaming  
-→ Real-time analytics output
+A real-time and historical sentiment analysis platform built on a **Lambda-style architecture**. The system streams live posts from Bluesky, processes them through a distributed pipeline, stores them in HDFS, and performs real-time analytics using Apache Spark Structured Streaming.
 
 ---
 
-## 🧱 Architecture
+# 🚀 Overview
 
-Bluesky Stream  
-→ Bridge (WebSocket → TCP)  
-→ TCP :9999  
-→ Collector (buffer + write)  
-→ HDFS (partitioned storage)  
-→ Spark Master + Worker  
-→ Spark Streaming Job  
+This project ingests a continuous stream of Bluesky posts, applies sentiment analysis (positive / negative / neutral), and stores results for two types of processing:
+
+- ⚡ **Real-time analytics** → live sentiment tracking (seconds-level updates)
+- 📊 **Historical analytics** → batch analysis of trends over time
+
+It demonstrates a full end-to-end **Big Data streaming architecture**.
 
 ---
 
-## 📦 Components
+# 🧱 System Architecture
 
-### 🔵 Bluesky Bridge
+## High-level pipeline
+
+```
+Bluesky Stream
+   ↓
+WebSocket Bridge (Python)
+   ↓
+TCP Socket (port 9999)
+   ↓
+HDFS Collector (buffering + batching)
+   ↓
+HDFS Data Lake (partitioned storage)
+   ↓
+Apache Spark Structured Streaming
+   ↓
+Real-time analytics output
+```
+
+---
+
+## Architecture Diagram
+
+![Architecture Diagram](./images/architecture.png)
+
+---
+
+# 📦 Components
+
+## 🔵 1. Bluesky Bridge (`bridge.py`)
 - Connects to Bluesky Jetstream WebSocket
-- Filters post events
-- Streams JSON over TCP
+- Filters `app.bsky.feed.post` events
+- Extracts post text
+- Streams JSON messages via TCP socket (port 9999)
 
-### 🟡 HDFS Collector
+---
+
+## 🟡 2. HDFS Collector (`hdfs_collector.py`)
 - Connects to bridge via TCP
-- Buffers messages
-- Writes JSONL files to HDFS
-- Partitions by date/hour:
-  /bluesky/raw/YYYY-MM-DD/HH/
+- Buffers incoming posts
+- Writes JSONL files to HDFS using WebHDFS API
+- Organizes data by time partitions:
 
-### 🟢 Hadoop Cluster
-- NameNode + 2 DataNodes
-- Stores raw data
-- Web UI available on port 9870
+```
+/bluesky/raw/YYYY-MM-DD/HH/
+```
 
-### 🟣 Apache Spark Streaming
+---
+
+## 🟢 3. Hadoop Cluster (HDFS)
+- NameNode + DataNodes
+- Stores raw streaming data
+- Web UI available at:
+  - http://localhost:9870
+
+---
+
+## 🟣 4. Apache Spark Streaming
 - Reads new files from HDFS
-- Structured Streaming
+- Uses Structured Streaming API
 - Performs real-time aggregation
 - Outputs results to console
 
 ---
 
-## ⚙️ Tech Stack
+# ⚙️ Tech Stack
 
 - Python 3.11
 - Docker & Docker Compose
@@ -65,11 +89,12 @@ Bluesky Stream
 - Apache Spark 3.5 (official image)
 - WebSockets
 - TCP Sockets
-- WebHDFS API
+- WebHDFS REST API
 
 ---
 
-## 📁 Project Structure
+# 📁 Project Structure
+
 ```
 Social-Media-Sentiment-Analysis
 ├── bridge/
@@ -88,35 +113,46 @@ Social-Media-Sentiment-Analysis
 ├── hadoop.env
 └── README.md
 ```
+
 ---
 
-## 🚀 How to Run
+# 🚀 How to Run
 
-### 1. Clone repo
+## 1. Clone repository
+
 ```bash
 git clone <repo-url>
-cd project
+cd Social-Media-Sentiment-Analysis
 ```
 
-### 2. Start system
+---
+
+## 2. Start full system
+
 ```bash
 docker compose up --build
 ```
 
 ---
 
-## 🌐 Access UIs
+# 🌐 Access Interfaces
 
-- HDFS NameNode: http://localhost:9870  
-- Spark UI: http://localhost:8080  
+| Service        | URL |
+|----------------|-----|
+| HDFS NameNode  | http://localhost:9870 |
+| Spark UI       | http://localhost:8080 |
 
 ---
 
-## 📊 Expected Output
+# 📊 Expected Output
 
-### HDFS files
+## 📦 HDFS Storage
 
+Files stored in:
+
+```
 /bluesky/raw/YYYY-MM-DD/HH/posts_*.jsonl
+```
 
 Example content:
 
@@ -127,98 +163,118 @@ Example content:
 
 ---
 
-### Spark output
+## ⚡ Spark Streaming Output
 
+Example console output:
+
+```
 -------------------------------------------
 Batch: 0
 -------------------------------------------
++--------------------+-----+
 |text                |count|
-| ------------------ | --- |
++--------------------+-----+
 |apple event         |12   |
 |iphone leak         |7    |
-
-
----
-
-## 🔄 Data Flow
-
-1. Bluesky streams posts
-2. Bridge forwards via TCP
-3. Collector buffers messages
-4. Writes JSONL to HDFS
-5. Spark reads new files
-6. Real-time aggregation
++--------------------+-----+
+```
 
 ---
 
-## 🧠 Key Features
+# 🔄 Data Flow Summary
+
+1. Bluesky streams live posts
+2. Bridge forwards data via TCP
+3. Collector buffers and batches data
+4. Data is stored in HDFS (JSONL format)
+5. Spark reads new files automatically
+6. Real-time aggregation is computed
+
+---
+
+# 🧠 Key Features
 
 - Real-time ingestion pipeline
-- Fault-tolerant buffering
 - Distributed storage (HDFS)
 - Streaming analytics (Spark)
-- Time-partitioned data
-- Fully containerized system
+- Fault-tolerant buffering system
+- Time-based partitioning
+- Fully containerized microservices architecture
 
 ---
 
-## 🧪 Testing
+# 🧪 Testing the System
 
-### Check bridge
+## Check bridge logs
+
 ```bash
 docker logs -f bluesky-bridge
 ```
 
-### Check collector
+---
+
+## Check collector logs
+
 ```bash
 docker logs -f hdfs-collector
 ```
 
-### Check HDFS
+---
+
+## Check HDFS
+
 http://localhost:9870
 
-### Check Spark
+---
+
+## Check Spark logs
+
 ```bash
 docker logs -f spark-app
 ```
 
 ---
 
-## 🛠️ Common Issues
+# 🛠️ Common Issues
 
-### Bridge not reachable
-- Ensure BRIDGE_HOST=bluesky-bridge
-- Port 9999 exposed
-
-### Spark crash
-- Missing schema in stream.py
-- Wrong HDFS config
-
-### No Spark output
-- Spark only reads new files after startup
+## ❌ Bridge not reachable
+- Ensure `BRIDGE_HOST=bluesky-bridge`
+- Ensure port `9999` is exposed
 
 ---
 
-## 📈 Future Improvements
-
-- Kafka replacement for TCP layer
-- Sentiment analysis (NLP)
-- Real-time dashboard (Streamlit)
-- Parquet instead of JSONL
-- Windowed streaming analytics
+## ❌ Spark crashes at startup
+- Missing schema in `stream.py`
+- Incorrect HDFS configuration
 
 ---
 
-## 👨‍💻 Author
-
-Big Data project covering:
-- Streaming ingestion
-- Distributed storage
-- Real-time processing
-- Container orchestration
+## ❌ No Spark output
+- Spark only reads files created after it starts
 
 ---
 
-## 📜 License
+# 📈 Future Improvements
+
+- Replace TCP bridge with Kafka (production-grade streaming)
+- Add sentiment analysis (NLP models)
+- Build real-time dashboard (Streamlit / React)
+- Convert JSONL → Parquet format
+- Add windowed analytics (5–10 min trends)
+
+---
+
+# 👨‍💻 Author
+
+This project demonstrates core Big Data concepts:
+
+- Streaming data ingestion
+- Distributed storage systems
+- Real-time processing engines
+- Containerized microservices architecture
+
+---
+
+# 📜 License
 
 MIT
