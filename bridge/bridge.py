@@ -27,7 +27,7 @@ async def stream_to_spark(client_sock):
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("localhost", 9999))
+    server.bind(("0.0.0.0", 9999))
     server.listen(1)
     print("Waiting for server to connect...")
     client_sock, _ = server.accept()
