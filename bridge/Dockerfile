@@ -3,6 +3,6 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY bridge.py .
 
-RUN pip install --no-cache-dir websockets
+RUN pip install --no-cache-dir websockets kafka-python
 
 CMD ["python", "bridge.py"]

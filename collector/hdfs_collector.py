@@ -1,12 +1,12 @@
 """
 hdfs_collector.py
 ─────────────────
-Connects to bluesky_bridge.py (TCP socket) and writes incoming posts
+Connects to Kafka and writes incoming posts
 into HDFS, partitioned by date and hour:
 
   /bluesky/raw/YYYY-MM-DD/HH/posts_<timestamp>.jsonl
 
-Uses WebHDFS REST API (no Java/Hadoop client needed).
+Uses WebHDFS REST API.
 """
 
 import os
@@ -16,19 +16,19 @@ import time
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
-
+from kafka import KafkaConsumer
 import requests
 
 # ── Config (overridable via env vars) ────────────────────────────────────────
-BRIDGE_HOST = os.getenv("BRIDGE_HOST", "localhost")
-BRIDGE_PORT  = int(os.getenv("BRIDGE_PORT", 9999))
+KAFKA_HOST = os.getenv("KAFKA_HOST", "kafka")
+KAFKA_PORT = int(os.getenv("KAFKA_PORT", 9092))
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "bluesky.posts")
+# How many posts to buffer before flushing a file to HDFS
+FLUSH_EVERY  = int(os.getenv("FLUSH_EVERY", 50))
 
 HDFS_HOST    = os.getenv("HDFS_HOST", "namenode")
 HDFS_PORT    = int(os.getenv("HDFS_PORT", 9870))
 HDFS_DIR     = os.getenv("HDFS_DIR", "/bluesky/raw")
-
-# How many posts to buffer before flushing a file to HDFS
-FLUSH_EVERY  = int(os.getenv("FLUSH_EVERY", 50))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -95,46 +95,26 @@ def flush_to_hdfs(buffer: list):
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
-
-def connect_to_bridge() -> socket.socket:
-    while True:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((BRIDGE_HOST, BRIDGE_PORT))
-            log.info("Connected to bridge at %s:%d", BRIDGE_HOST, BRIDGE_PORT)
-            return s
-        except ConnectionRefusedError:
-            log.warning("Bridge not reachable, retrying in 5s…")
-            time.sleep(5)
-
+def connect_consumer():
+    consumer = KafkaConsumer(
+        KAFKA_TOPIC,
+        bootstrap_servers=f"{KAFKA_HOST}:{KAFKA_PORT}",
+        value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+        auto_offset_reset="earliest",
+        enable_auto_commit=True,
+        consumer_timeout_ms=1000,  
+    )
+    return consumer
 
 def main():
-    log.info("HDFS Collector starting — target: hdfs://%s:%d%s", HDFS_HOST, HDFS_PORT, HDFS_DIR)
-
-    sock    = connect_to_bridge()
-    buffer  = []
-    partial = ""
+    log.info("HDFS Collector starting — consume from kafka %s:%d topic=%s", KAFKA_HOST, KAFKA_PORT, KAFKA_TOPIC)
+    consumer = connect_consumer()
+    buffer   = []
 
     try:
-        while True:
-            chunk = sock.recv(4096).decode("utf-8", errors="replace")
-            if not chunk:
-                log.warning("Bridge closed connection.")
-                break
-
-            # Lines may be split across TCP chunks
-            partial += chunk
-            lines, partial = partial.rsplit("\n", 1) if "\n" in partial else ("", partial)
-
-            for line in lines.split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    post = json.loads(line)
-                    buffer.append(post)
-                except json.JSONDecodeError:
-                    log.warning("Could not parse line: %s", line[:80])
+        for msg in consumer:
+            post = msg.value
+            buffer.append(post)
 
             if len(buffer) >= FLUSH_EVERY:
                 flush_to_hdfs(buffer)
@@ -145,7 +125,7 @@ def main():
     finally:
         if buffer:
             flush_to_hdfs(buffer)
-        sock.close()
+        consumer.close()
         log.info("Collector stopped.")
 
 
