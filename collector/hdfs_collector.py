@@ -102,7 +102,9 @@ def connect_consumer():
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         auto_offset_reset="earliest",
         enable_auto_commit=True,
-        consumer_timeout_ms=1000,  
+        group_id="hdfs-collector-group",
+        fetch_max_bytes=200000000,
+        max_partition_fetch_bytes=200000000,
     )
     return consumer
 

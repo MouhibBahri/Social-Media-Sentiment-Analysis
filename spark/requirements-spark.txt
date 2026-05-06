@@ -1,0 +1,7 @@
+# Spark dependencies for sentiment analysis
+nltk>=3.8.0
+pandas>=2.0.0
+numpy>=1.24.0
+python-dotenv>=1.0.0
+prometheus-client>=0.17.0
+psycopg2-binary>=2.9.0
