@@ -4,6 +4,8 @@ WORKDIR /app
 
 COPY hdfs_collector.py .
 
-RUN pip install --no-cache-dir requests kafka-python
+RUN pip install --no-cache-dir requests kafka-python prometheus-client
 
-CMD ["python", "hdfs_collector.py"]
+EXPOSE 8000
+
+CMD ["python", "-u", "hdfs_collector.py"]

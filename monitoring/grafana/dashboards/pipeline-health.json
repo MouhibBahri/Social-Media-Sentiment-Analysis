@@ -1,0 +1,115 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Pipeline Health",
+  "uid": "pipeline-health",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "15s",
+  "tags": ["sentiment", "pipeline"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Bluesky messages produced (total)",
+      "id": 1,
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "sum(bridge_messages_produced_total{source=\"bluesky\"})", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "graphMode": "area"}
+    },
+    {
+      "type": "stat",
+      "title": "Reddit messages produced (total)",
+      "id": 2,
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "sum(bridge_messages_produced_total{source=\"reddit\"})", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "graphMode": "area"}
+    },
+    {
+      "type": "stat",
+      "title": "Spark posts written to Postgres",
+      "id": 3,
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "sum(spark_posts_written_total)", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "graphMode": "area"}
+    },
+    {
+      "type": "stat",
+      "title": "HDFS posts buffered",
+      "id": 4,
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "sum(collector_posts_consumed_total)", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "graphMode": "area"}
+    },
+    {
+      "type": "timeseries",
+      "title": "Producer message rate (msgs/sec)",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "rate(bridge_messages_produced_total[1m])", "legendFormat": "{{source}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Spark batch processing rate",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "rate(spark_batches_processed_total[1m])", "legendFormat": "batches/sec", "refId": "A"},
+        {"expr": "rate(spark_posts_written_total[1m])", "legendFormat": "posts/sec", "refId": "B"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sentiment classifications per second",
+      "id": 7,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "rate(spark_sentiment_classified_total[1m])", "legendFormat": "{{sentiment}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Kafka consumer lag",
+      "id": 8,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (topic, consumergroup) (kafka_consumergroup_lag)", "legendFormat": "{{consumergroup}} / {{topic}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container CPU usage (%)",
+      "id": 9,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[1m])) * 100", "legendFormat": "{{name}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container memory (MB)",
+      "id": 10,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "container_memory_usage_bytes{name!=\"\"} / 1024 / 1024", "legendFormat": "{{name}}", "refId": "A"}
+      ]
+    }
+  ]
+}

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from kafka import KafkaConsumer
 import requests
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 # ── Config (overridable via env vars) ────────────────────────────────────────
 KAFKA_HOST = os.getenv("KAFKA_HOST", "kafka")
@@ -29,6 +30,29 @@ FLUSH_EVERY  = int(os.getenv("FLUSH_EVERY", 50))
 HDFS_HOST    = os.getenv("HDFS_HOST", "namenode")
 HDFS_PORT    = int(os.getenv("HDFS_PORT", 9870))
 HDFS_DIR     = os.getenv("HDFS_DIR", "/bluesky/raw")
+METRICS_PORT = int(os.getenv("METRICS_PORT", 8000))
+
+# ── Prometheus metrics ────────────────────────────────────────────────────────
+POSTS_CONSUMED = Counter(
+    "collector_posts_consumed_total",
+    "Posts consumed from Kafka and buffered",
+)
+HDFS_FLUSHES = Counter(
+    "collector_hdfs_flushes_total",
+    "Number of successful HDFS flushes",
+)
+HDFS_FLUSH_ERRORS = Counter(
+    "collector_hdfs_flush_errors_total",
+    "Number of failed HDFS flushes",
+)
+HDFS_FLUSH_DURATION = Histogram(
+    "collector_hdfs_flush_duration_seconds",
+    "Latency of HDFS flush operations",
+)
+BUFFER_SIZE = Gauge(
+    "collector_buffer_size",
+    "Number of posts currently buffered before next flush",
+)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -85,13 +109,19 @@ def flush_to_hdfs(buffer: list):
     hdfs_path = f"{HDFS_DIR}/{date_str}/{hour_str}"
     file_path = f"{hdfs_path}/posts_{ts}.jsonl"
 
-    # Ensure directory exists
-    hdfs_mkdirs(hdfs_path)
+    with HDFS_FLUSH_DURATION.time():
+        try:
+            # Ensure directory exists
+            hdfs_mkdirs(hdfs_path)
 
-    payload = "\n".join(json.dumps(post) for post in buffer) + "\n"
-    hdfs_write(file_path, payload.encode("utf-8"))
+            payload = "\n".join(json.dumps(post) for post in buffer) + "\n"
+            hdfs_write(file_path, payload.encode("utf-8"))
 
-    log.info("Flushed %d posts → %s", len(buffer), file_path)
+            HDFS_FLUSHES.inc()
+            log.info("Flushed %d posts → %s", len(buffer), file_path)
+        except Exception:
+            HDFS_FLUSH_ERRORS.inc()
+            raise
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -102,12 +132,16 @@ def connect_consumer():
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         auto_offset_reset="earliest",
         enable_auto_commit=True,
-        consumer_timeout_ms=1000,  
+        group_id="hdfs-collector-group",
+        fetch_max_bytes=200000000,
+        max_partition_fetch_bytes=200000000,
     )
     return consumer
 
 def main():
     log.info("HDFS Collector starting — consume from kafka %s:%d topic=%s", KAFKA_HOST, KAFKA_PORT, KAFKA_TOPIC)
+    start_http_server(METRICS_PORT)
+    log.info("Prometheus metrics exposed on :%d/metrics", METRICS_PORT)
     consumer = connect_consumer()
     buffer   = []
 
@@ -115,10 +149,13 @@ def main():
         for msg in consumer:
             post = msg.value
             buffer.append(post)
+            POSTS_CONSUMED.inc()
+            BUFFER_SIZE.set(len(buffer))
 
             if len(buffer) >= FLUSH_EVERY:
                 flush_to_hdfs(buffer)
                 buffer.clear()
+                BUFFER_SIZE.set(0)
 
     except KeyboardInterrupt:
         log.info("Interrupted — flushing remaining buffer…")

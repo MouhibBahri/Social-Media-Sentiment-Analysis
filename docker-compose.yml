@@ -18,6 +18,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       CLUSTER_ID: "bluesky-kafka-cluster-01"
+      KAFKA_MESSAGE_MAX_BYTES: "200000000"
+      KAFKA_REPLICA_FETCH_MAX_BYTES: "200000000"
+      KAFKA_SOCKET_REQUEST_MAX_BYTES: "200000000"
+      KAFKA_FETCH_MESSAGE_MAX_BYTES: "200000000"
     ports:
       - "9092:9092"
     networks:
@@ -50,14 +54,36 @@ services:
       - "1"
     restart: "no"
 
+  kafka-init-reddit:
+    image: apache/kafka:3.9.1
+    container_name: kafka-init-reddit
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
+    command:
+      - --bootstrap-server
+      - kafka:9092
+      - --create
+      - --if-not-exists
+      - --topic
+      - reddit.posts
+      - --partitions
+      - "3"
+      - --replication-factor
+      - "1"
+    restart: "no"
+
   # ─── HDFS NameNode ────────────────────────────────────────────────────────
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: namenode
     hostname: namenode
     ports:
-      - "9870:9870"   # Web UI + WebHDFS
-      - "8020:8020"   # RPC
+      - "9870:9870"
+      - "8020:8020"
     environment:
       CLUSTER_NAME: bluesky-hadoop
     env_file:
@@ -67,12 +93,36 @@ services:
     networks:
       - hadoop-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9870"]
-      interval: 30s
+      # Enhanced healthcheck to ensure NameNode is actually responding to HDFS commands
+      test: ["CMD", "hdfs", "dfsadmin", "-safemode", "get"]
+      interval: 10s
       timeout: 10s
       retries: 10
       start_period: 30s
     restart: unless-stopped
+
+  # ─── HDFS Initialization (NEW) ──────────────────────────────────────────
+  hdfs-init:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: hdfs-init
+    env_file:
+      - hadoop.env
+    networks:
+      - hadoop-net
+    depends_on:
+      namenode:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for NameNode to exit Safe Mode..."
+        hdfs dfsadmin -safemode wait
+        echo "Creating Spark checkpoint directory..."
+        hdfs dfs -mkdir -p /tmp/spark-sentiment-checkpoint
+        echo "Setting global permissions for /tmp..."
+        hdfs dfs -chmod -R 777 /tmp
+        echo "HDFS Initialization complete."
+    restart: "no"
 
   # ─── HDFS DataNode 1 ──────────────────────────────────────────────────────
   datanode1:
@@ -121,6 +171,21 @@ services:
       - "9999:9999"   # optional (for debugging)
     restart: unless-stopped
 
+  # ─── Reddit Bridge (Reddit JSON → Kafka) ─────────────────────────────────
+  reddit-bridge:
+    build: ./reddit-bridge
+    container_name: reddit-bridge
+    hostname: reddit-bridge
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_TOPIC=reddit.posts
+      - REDDIT_URL=https://www.reddit.com/r/all/new.json?limit=100
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
   # ─── HDFS Collector (TCP → HDFS) ──────────────────────────────────────────
   hdfs-collector:
     build: ./collector
@@ -158,11 +223,15 @@ services:
 
   # ─── Spark Worker ────────────────────────────────────────────────────────
   spark-worker:
-    image: apache/spark:3.5.0
+    build: ./spark
     container_name: spark-worker
     hostname: spark-worker
     depends_on:
       - spark-master
+    environment:
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_INSTANCES=1
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     networks:
@@ -177,8 +246,12 @@ services:
         condition: service_started
       namenode:
         condition: service_healthy
+      hdfs-init:
+        condition: service_completed_successfully # Ensure permissions are set first
       kafka-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     volumes:
       - ./hadoop-config:/opt/hadoop/etc/hadoop
       - spark_ivy_cache:/home/spark/.ivy2
@@ -186,12 +259,137 @@ services:
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
     networks:
       - hadoop-net
+      
+  # ─── PostgreSQL for sentiment analytics persistence ───────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_USER: bluesky
+      POSTGRES_PASSWORD: bluesky_postgres_pwd
+      POSTGRES_DB: sentiment_analytics
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - hadoop-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "bluesky", "-d", "sentiment_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  streamlit-dashboard:
+    build: ./dashboard
+    container_name: streamlit-dashboard
+    ports:
+      - "8501:8501"
+    networks:
+      - hadoop-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Prometheus (metrics scraper) ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    hostname: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── Grafana (visualisation) ──────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    hostname: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - postgres
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── Postgres Exporter (DB metrics for Prometheus) ────────────────────────
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    hostname: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://bluesky:bluesky_postgres_pwd@postgres:5432/sentiment_analytics?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── Kafka Exporter (broker/topic/consumer-group metrics) ─────────────────
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: kafka-exporter
+    hostname: kafka-exporter
+    command:
+      - "--kafka.server=kafka:9092"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── cAdvisor (per-container CPU / memory / IO) ───────────────────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    hostname: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
 # ─── Volumes ────────────────────────────────────────────────────────────────
 volumes:
   namenode_data:
   datanode1_data:
   datanode2_data:
   spark_ivy_cache:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
 
 # ─── Network ────────────────────────────────────────────────────────────────
 networks:

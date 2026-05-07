@@ -1,0 +1,94 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Sentiment Analytics",
+  "uid": "sentiment-analytics",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "30s",
+  "tags": ["sentiment", "postgres"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total posts (all-time)",
+      "id": 1,
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT COUNT(*) AS value FROM sentiment_posts;", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Posts processed (last 1h)",
+      "id": 2,
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT COUNT(*) AS value FROM sentiment_posts WHERE processed_at > NOW() - INTERVAL '1 hour';", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Distinct authors",
+      "id": 3,
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT COUNT(DISTINCT author) AS value FROM sentiment_posts;", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Avg sentiment score (24h)",
+      "id": 4,
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT COALESCE(AVG(sentiment_score),0) AS value FROM sentiment_posts WHERE processed_at > NOW() - INTERVAL '24 hours';", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "piechart",
+      "title": "Sentiment distribution (all-time)",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 4},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT sentiment AS metric, COUNT(*) AS value FROM sentiment_posts GROUP BY sentiment;", "refId": "A"}]
+    },
+    {
+      "type": "barchart",
+      "title": "Posts per source",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 4},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT source, COUNT(*) AS posts FROM sentiment_posts GROUP BY source ORDER BY posts DESC;", "refId": "A"}]
+    },
+    {
+      "type": "barchart",
+      "title": "Sentiment by source",
+      "id": 7,
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 4},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT source, sentiment, COUNT(*) AS posts FROM sentiment_posts GROUP BY source, sentiment ORDER BY source, sentiment;", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Posts per minute (by sentiment)",
+      "id": 8,
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 12},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "time_series", "rawSql": "SELECT date_trunc('minute', processed_at) AS time, sentiment AS metric, COUNT(*) AS value FROM sentiment_posts WHERE $__timeFilter(processed_at) GROUP BY 1, 2 ORDER BY 1;", "refId": "A"}]
+    },
+    {
+      "type": "table",
+      "title": "Latest posts",
+      "id": 9,
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 21},
+      "datasource": {"type": "postgres", "uid": "SentimentPostgres"},
+      "targets": [{"format": "table", "rawSql": "SELECT processed_at, source, sentiment, sentiment_score, author, LEFT(text, 140) AS text FROM sentiment_posts ORDER BY processed_at DESC LIMIT 30;", "refId": "A"}]
+    }
+  ]
+}
