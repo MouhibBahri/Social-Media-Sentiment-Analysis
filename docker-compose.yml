@@ -198,6 +198,9 @@ services:
       HDFS_PORT: "9870"
       HDFS_DIR: /bluesky/raw
       FLUSH_EVERY: "50"
+      KAFKA_HOST: kafka
+      KAFKA_PORT: "9092"
+      KAFKA_TOPICS: "bluesky.posts,reddit.posts"
     networks:
       - hadoop-net
     depends_on:
@@ -295,6 +298,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  # ─── Elasticsearch (batch analytics sink) ─────────────────────────────────
+  # (Elasticsearch/Kibana and batch indexing removed — kept Reddit→Kafka→HDFS only)
 
   # ─── Prometheus (metrics scraper) ─────────────────────────────────────────
   prometheus:

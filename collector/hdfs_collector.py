@@ -21,9 +21,10 @@ import requests
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 # ── Config (overridable via env vars) ────────────────────────────────────────
+# Kafka config: support multiple topics via comma-separated env var
 KAFKA_HOST = os.getenv("KAFKA_HOST", "kafka")
 KAFKA_PORT = int(os.getenv("KAFKA_PORT", 9092))
-KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "bluesky.posts")
+KAFKA_TOPICS = [t.strip() for t in os.getenv("KAFKA_TOPICS", "bluesky.posts").split(",") if t.strip()]
 # How many posts to buffer before flushing a file to HDFS
 FLUSH_EVERY  = int(os.getenv("FLUSH_EVERY", 50))
 
@@ -126,8 +127,8 @@ def flush_to_hdfs(buffer: list):
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 def connect_consumer():
+    """Create a Kafka consumer and subscribe to configured topics."""
     consumer = KafkaConsumer(
-        KAFKA_TOPIC,
         bootstrap_servers=f"{KAFKA_HOST}:{KAFKA_PORT}",
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         auto_offset_reset="earliest",
@@ -136,10 +137,13 @@ def connect_consumer():
         fetch_max_bytes=200000000,
         max_partition_fetch_bytes=200000000,
     )
+    # Subscribe to configured topics (supports multiple topics)
+    consumer.subscribe(KAFKA_TOPICS)
+    log.info("HDFS Collector subscribed to Kafka topics: %s", KAFKA_TOPICS)
     return consumer
 
 def main():
-    log.info("HDFS Collector starting — consume from kafka %s:%d topic=%s", KAFKA_HOST, KAFKA_PORT, KAFKA_TOPIC)
+    log.info("HDFS Collector starting — consume from kafka %s:%d topics=%s", KAFKA_HOST, KAFKA_PORT, KAFKA_TOPICS)
     start_http_server(METRICS_PORT)
     log.info("Prometheus metrics exposed on :%d/metrics", METRICS_PORT)
     consumer = connect_consumer()
