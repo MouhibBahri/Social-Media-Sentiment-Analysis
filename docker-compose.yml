@@ -270,7 +270,7 @@ services:
       POSTGRES_PASSWORD: bluesky_postgres_pwd
       POSTGRES_DB: sentiment_analytics
     ports:
-      - "5432:5432"
+      - "5437:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -296,6 +296,91 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ─── Prometheus (metrics scraper) ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    hostname: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── Grafana (visualisation) ──────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    hostname: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - postgres
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── Postgres Exporter (DB metrics for Prometheus) ────────────────────────
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    hostname: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://bluesky:bluesky_postgres_pwd@postgres:5432/sentiment_analytics?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── Kafka Exporter (broker/topic/consumer-group metrics) ─────────────────
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: kafka-exporter
+    hostname: kafka-exporter
+    command:
+      - "--kafka.server=kafka:9092"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # ─── cAdvisor (per-container CPU / memory / IO) ───────────────────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    hostname: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
 # ─── Volumes ────────────────────────────────────────────────────────────────
 volumes:
   namenode_data:
@@ -303,6 +388,8 @@ volumes:
   datanode2_data:
   spark_ivy_cache:
   postgres_data:
+  prometheus_data:
+  grafana_data:
 
 # ─── Network ────────────────────────────────────────────────────────────────
 networks:

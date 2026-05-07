@@ -7,6 +7,7 @@ from datetime import datetime
 import aiohttp
 from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable
+from prometheus_client import Counter, Gauge, start_http_server
 
 REDDIT_URL = os.getenv("REDDIT_URL", "https://www.reddit.com/r/all/new.json?limit=100")
 KEYWORDS = ["microsoft", "copilot", "linux", "ai"]
@@ -14,6 +15,34 @@ KAFKA_HOST = os.getenv("KAFKA_HOST", "kafka")
 KAFKA_PORT = os.getenv("KAFKA_PORT", "9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "reddit.posts")
 POLL_INTERVAL = int(os.getenv("REDDIT_POLL_SECONDS", "15"))
+METRICS_PORT = int(os.getenv("METRICS_PORT", "8000"))
+
+# ── Prometheus metrics ────────────────────────────────────────────────────────
+EVENTS_RECEIVED = Counter(
+    "bridge_events_received_total",
+    "Raw events received from upstream feed",
+    ["source"],
+)
+MESSAGES_PRODUCED = Counter(
+    "bridge_messages_produced_total",
+    "Messages successfully produced to Kafka",
+    ["source", "topic"],
+)
+MESSAGES_FILTERED_OUT = Counter(
+    "bridge_messages_filtered_out_total",
+    "Messages dropped because they did not match keyword filters",
+    ["source"],
+)
+PRODUCER_ERRORS = Counter(
+    "bridge_producer_errors_total",
+    "Errors encountered while producing to Kafka",
+    ["source"],
+)
+UPSTREAM_CONNECTED = Gauge(
+    "bridge_upstream_connected",
+    "1 if upstream poll succeeded on the last cycle, 0 otherwise",
+    ["source"],
+)
 
 
 def create_producer():
@@ -47,12 +76,14 @@ async def stream_to_kafka():
                 async with session.get(REDDIT_URL, timeout=30) as response:
                     data = await response.json()
                     posts = data.get("data", {}).get("children", [])
+                    UPSTREAM_CONNECTED.labels(source="reddit").set(1)
                     for item in posts:
                         post = item.get("data", {})
                         post_id = post.get("id")
                         if not post_id or post_id in seen_ids:
                             continue
 
+                        EVENTS_RECEIVED.labels(source="reddit").inc()
                         title = post.get("title", "")
                         selftext = post.get("selftext", "")
                         text = f"{title}\n{selftext}".strip()
@@ -76,13 +107,21 @@ async def stream_to_kafka():
                                 "subreddit": post.get("subreddit", "unknown"),
                                 "permalink": post.get("permalink", ""),
                             }
-                            producer.send(KAFKA_TOPIC, payload)
+                            try:
+                                producer.send(KAFKA_TOPIC, payload)
+                                MESSAGES_PRODUCED.labels(source="reddit", topic=KAFKA_TOPIC).inc()
+                            except Exception as send_err:
+                                PRODUCER_ERRORS.labels(source="reddit").inc()
+                                print(f"Kafka send failed: {send_err}")
                             seen_ids.add(post_id)
+                        else:
+                            MESSAGES_FILTERED_OUT.labels(source="reddit").inc()
 
                     if len(seen_ids) > 5000:
                         seen_ids.clear()
 
             except Exception as exc:
+                UPSTREAM_CONNECTED.labels(source="reddit").set(0)
                 print(f"Reddit bridge error: {exc}. Retrying in 5s...")
                 await asyncio.sleep(5)
                 continue
@@ -92,6 +131,8 @@ async def stream_to_kafka():
 
 def main():
     print("Reddit bridge Kafka producer starting…")
+    start_http_server(METRICS_PORT)
+    print(f"Prometheus metrics exposed on :{METRICS_PORT}/metrics")
     asyncio.run(stream_to_kafka())
 
 

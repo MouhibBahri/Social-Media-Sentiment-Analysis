@@ -8,10 +8,46 @@ import logging
 import psycopg2
 from psycopg2.extras import execute_values
 from datetime import datetime
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ── Prometheus metrics (driver-side) ─────────────────────────────────────────
+METRICS_PORT = int(os.getenv("METRICS_PORT", "8000"))
+
+BATCHES_PROCESSED = Counter(
+    "spark_batches_processed_total",
+    "Number of streaming micro-batches processed",
+)
+EMPTY_BATCHES = Counter(
+    "spark_empty_batches_total",
+    "Number of micro-batches that contained zero records",
+)
+POSTS_WRITTEN = Counter(
+    "spark_posts_written_total",
+    "Posts written to PostgreSQL",
+    ["source"],
+)
+SENTIMENT_CLASSIFIED = Counter(
+    "spark_sentiment_classified_total",
+    "Posts classified by sentiment (driver-side counter from per-batch aggregates)",
+    ["source", "sentiment"],
+)
+POSTGRES_WRITE_ERRORS = Counter(
+    "spark_postgres_write_errors_total",
+    "Errors while writing to PostgreSQL",
+    ["target"],
+)
+BATCH_DURATION = Histogram(
+    "spark_batch_duration_seconds",
+    "Time spent processing a streaming batch (driver side)",
+)
+LAST_BATCH_TIMESTAMP = Gauge(
+    "spark_last_batch_timestamp",
+    "Unix timestamp of the most recently processed batch",
+)
 
 # Initialize NLTK VADER sentiment analyzer
 try:
@@ -74,11 +110,15 @@ def write_sentiment_aggregates_to_postgres(batch_df, batch_id):
             execute_values(cur, sql, values)
             conn.commit()
             logger.info(f"Batch {batch_id}: Wrote {len(values)} sentiment aggregates to PostgreSQL")
-        
+
+            for ts, src, sent, cnt in values:
+                SENTIMENT_CLASSIFIED.labels(source=src, sentiment=sent).inc(cnt)
+
         cur.close()
         conn.close()
-        
+
     except Exception as e:
+        POSTGRES_WRITE_ERRORS.labels(target="aggregate").inc()
         logger.error(f"Error writing aggregates to PostgreSQL: {e}")
         # Don't raise - allow streaming to continue even if DB write fails
 
@@ -118,7 +158,7 @@ def write_sentiment_posts_to_postgres(batch_df, batch_id):
         
         if values:
             sql = """
-            INSERT INTO sentiment_posts 
+            INSERT INTO sentiment_posts
             (id, text, author, created_at, source, sentiment, sentiment_score, confidence, processed_at)
             VALUES %s
             ON CONFLICT (id) DO NOTHING
@@ -126,11 +166,18 @@ def write_sentiment_posts_to_postgres(batch_df, batch_id):
             execute_values(cur, sql, values)
             conn.commit()
             logger.info(f"Batch {batch_id}: Wrote {len(values)} posts to PostgreSQL")
-        
+
+            per_source = {}
+            for v in values:
+                per_source[v[4]] = per_source.get(v[4], 0) + 1
+            for src, cnt in per_source.items():
+                POSTS_WRITTEN.labels(source=src or "unknown").inc(cnt)
+
         cur.close()
         conn.close()
-        
+
     except Exception as e:
+        POSTGRES_WRITE_ERRORS.labels(target="posts").inc()
         logger.error(f"Error writing posts to PostgreSQL: {e}")
         # Don't raise - allow streaming to continue even if DB write fails
 
@@ -305,23 +352,35 @@ sentiment_counts = df_valid.groupBy("source", "sentiment").count()
 # This function receives the per-batch DataFrame from df_valid.
 def write_to_postgres_and_console(batch_df, batch_id):
     """Write batch data to PostgreSQL and print summary."""
-    if batch_df.rdd.isEmpty():
-        logger.info(f"Batch {batch_id}: no records to process")
-        return
+    BATCHES_PROCESSED.inc()
+    LAST_BATCH_TIMESTAMP.set(datetime.utcnow().timestamp())
 
-    # Write detailed posts to PostgreSQL
-    write_sentiment_posts_to_postgres(batch_df, batch_id)
+    with BATCH_DURATION.time():
+        if batch_df.rdd.isEmpty():
+            EMPTY_BATCHES.inc()
+            logger.info(f"Batch {batch_id}: no records to process")
+            return
 
-    # Aggregate sentiment counts for this batch by source and sentiment
-    batch_sentiment_counts = batch_df.groupBy("source", "sentiment").count()
-    write_sentiment_aggregates_to_postgres(batch_sentiment_counts, batch_id)
+        # Write detailed posts to PostgreSQL
+        write_sentiment_posts_to_postgres(batch_df, batch_id)
 
-    # Display to console
-    print(f"\n{'='*60}")
-    print(f"Batch {batch_id} - Sentiment Distribution")
-    print(f"{'='*60}")
-    batch_sentiment_counts.show(truncate=False)
-    print(f"{'='*60}\n")
+        # Aggregate sentiment counts for this batch by source and sentiment
+        batch_sentiment_counts = batch_df.groupBy("source", "sentiment").count()
+        write_sentiment_aggregates_to_postgres(batch_sentiment_counts, batch_id)
+
+        # Display to console
+        print(f"\n{'='*60}")
+        print(f"Batch {batch_id} - Sentiment Distribution")
+        print(f"{'='*60}")
+        batch_sentiment_counts.show(truncate=False)
+        print(f"{'='*60}\n")
+
+# Start Prometheus metrics HTTP server in the driver process
+try:
+    start_http_server(METRICS_PORT)
+    logger.info(f"Prometheus metrics exposed on :{METRICS_PORT}/metrics")
+except Exception as e:
+    logger.warning(f"Failed to start Prometheus metrics server: {e}")
 
 # Start streaming query with PostgreSQL writes
 query = df_valid.writeStream \

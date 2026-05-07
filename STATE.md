@@ -2,42 +2,44 @@
 
 ## 📊 PROJECT STATUS OVERVIEW
 
-**Current Phase:** Phase 1 - Sentiment Analysis Foundation  
-**Overall Progress:** 40% → 75% (Target: 75% by end of Phase 1)  
-**Timeline:** Week 1 of 8-week roadmap  
-**Status:** 🟢 ACTIVE DEVELOPMENT (Kafka + Spark + PostgreSQL + Streamlit)
+**Current Phase:** Phase 1 - Sentiment Analysis Foundation + Observability
+**Overall Progress:** 75% → 90%
+**Timeline:** Week 1 of 8-week roadmap
+**Status:** 🟢 ACTIVE — Kafka + Spark + PostgreSQL + Streamlit + Prometheus + Grafana
 
 ---
 
-## 🎯 PHASE 1: SENTIMENT ANALYSIS FOUNDATION (75% Complete)
+## 🎯 PHASE 1: SENTIMENT ANALYSIS FOUNDATION (90% Complete)
 
-### ✅ COMPLETED (This Session)
+### ✅ COMPLETED
 
 | Feature | Status | Document Reference | Notes |
 |---------|--------|-------------------|-------|
-| **Bridge Services** | ✅ DONE | `bridge/bridge.py`, `reddit-bridge/reddit_bridge.py` | Added Bluesky and Reddit Kafka producers |
-| **Kafka Topic Setup** | ✅ DONE | `docker-compose.yml` | Added `bluesky.posts` and `reddit.posts` topics |
-| **Spark Streaming Pipeline** | ✅ DONE | `spark/stream.py` | Reads from both Kafka topics, processes source-aware data |
-| **Data Cleaning & Validation** | ✅ DONE | `spark/stream.py` | Text trimming, whitespace normalization, schema validation |
-| **PostgreSQL Persistence** | ✅ DONE | `postgres-init.sql` | Source-aware `sentiment_posts` and `sentiment_aggregate` tables |
-| **Streamlit Dashboard** | ✅ DONE | `dashboard/app.py` | Source selection, source-aware analytics, robust query handling |
-| **Docker Compose Orchestration** | ✅ DONE | `docker-compose.yml` | Added reddit bridge service and kafka-init-reddit |
+| **Bridge Services** | ✅ DONE | `bridge/bridge.py`, `reddit-bridge/reddit_bridge.py` | Bluesky + Reddit Kafka producers |
+| **Kafka Topic Setup** | ✅ DONE | `docker-compose.yml` | `bluesky.posts` + `reddit.posts` |
+| **Spark Streaming Pipeline** | ✅ DONE | `spark/stream.py` | Multi-topic ingest, source-aware processing |
+| **Data Cleaning & Validation** | ✅ DONE | `spark/stream.py` | Trim, whitespace normalize, schema validate |
+| **PostgreSQL Persistence** | ✅ DONE | `postgres-init.sql` | `sentiment_posts` + `sentiment_aggregate` |
+| **Streamlit Dashboard (live data)** | ✅ DONE | `dashboard/app.py` | Time-window selector, system status, auto-refresh, switched filters to `processed_at` |
+| **Prometheus stack** | ✅ DONE | `docker-compose.yml`, `monitoring/prometheus/prometheus.yml` | Scrapes bridges, collector, spark, kafka-exporter, postgres-exporter, cAdvisor |
+| **Grafana provisioning** | ✅ DONE | `monitoring/grafana/**` | Auto-provisioned datasources + 2 dashboards |
+| **App-level Prometheus metrics** | ✅ DONE | `bridge/bridge.py`, `reddit-bridge/reddit_bridge.py`, `collector/hdfs_collector.py`, `spark/stream.py` | Counters, gauges, histograms exposed on `:8000/metrics` |
+| **Docker Compose Orchestration** | ✅ DONE | `docker-compose.yml` | All services wired on `hadoop-net` |
 
-### 🔄 IN PROGRESS (Current Focus)
+### 🔄 IN PROGRESS
 
 | Feature | Status | Document Reference | Progress | ETA |
 |---------|--------|-------------------|----------|-----|
-| **Dashboard UX polish** | 🔄 IMPLEMENTING | `dashboard/app.py` | 70% | 1 hour |
-| **End-to-end streaming validation** | 🔄 IMPLEMENTING | `spark/stream.py` | 80% | 1 hour |
-| **Kafka + Spark throughput tuning** | 🔄 IMPLEMENTING | `spark/stream.py` | 60% | 2 hours |
+| **Kafka + Spark throughput tuning** | 🔄 | `spark/stream.py` | 60% | 2 hours |
 
 ### ⏳ PENDING (Phase 1)
 
 | Feature | Status | Document Reference | Priority |
 |---------|--------|-------------------|----------|
-| **Unit tests / validation scripts** | ⏳ PENDING | `tests/` | HIGH |
-| **Historical analytics views** | ⏳ PENDING | `dashboard/app.py` | MEDIUM |
-| **Spark checkpoint resiliency** | ⏳ PENDING | `spark/stream.py` | MEDIUM |
+| **Unit tests / validation scripts** | ⏳ | `tests/` | HIGH |
+| **Historical / batch analytics job** | ⏳ | `spark/` (new batch job) | MEDIUM |
+| **Spark checkpoint resiliency (HDFS)** | ⏳ | `spark/stream.py` | MEDIUM |
+| **Alertmanager rules** | ⏳ | `monitoring/prometheus/` | LOW |
 
 ---
 
@@ -46,14 +48,14 @@
 ### Resolved Issues
 - ✅ Fixed Kafka payload mapping for Reddit and Bluesky
 - ✅ Added `source` to persisted rows and aggregates
-- ✅ Source-aware PostgreSQL schema implemented
-- ✅ Streamlit dashboard updated for source filtering and empty-state handling
-- ✅ Added text trimming and normalization before sentiment scoring
-- ✅ Validated bridge and Spark code syntax
+- ✅ Source-aware PostgreSQL schema
+- ✅ Streamlit dashboard rendered empty because it filtered on `created_at` with a 1-hour window, but Reddit `created_at` is the post's original timestamp (often older than 1h) — switched to `processed_at` and added a configurable time window plus all-time totals
+- ✅ Streamlit had no auto-refresh — added 15s rerun loop and manual refresh
+- ✅ No observability — added Prometheus + Grafana stack with app-level metrics
+- ✅ Validated `docker compose config` syntax after monitoring additions
 
 ### Active Issues
-- 🔄 Streamlit chart refresh and live data updates
-- 🔄 End-to-end smoke testing between Kafka, Spark, PostgreSQL, and Streamlit
+- (none currently)
 
 ---
 
@@ -61,66 +63,78 @@
 
 ### Code Quality
 - **Test Coverage:** 0% (Unit tests pending)
-- **Documentation:** 95% (State and progress updated)
-- **Code Standards:** 90% (Formatting and cleanup ongoing)
+- **Documentation:** 95%
+- **Code Standards:** 90%
 
 ### Performance Targets
-- **Sentiment Analysis:** Real-time streaming ingest
+- **Sentiment Analysis:** real-time streaming ingest (foreachBatch, ~seconds)
 - **Data Processing:** Kafka → Spark → PostgreSQL
 - **Storage:** HDFS raw archive + PostgreSQL analytics
+- **Observability:** Prometheus 15s scrape, Grafana auto-provisioned dashboards
 
 ### Success Criteria Met
 - ✅ Multiple bridge producers working
 - ✅ Spark consumes `bluesky.posts` and `reddit.posts`
 - ✅ Source-aware persistence in `sentiment_posts`
-- ✅ Dashboard filtering and source-aware charts implemented
-- ✅ Cleaned text is now passed to sentiment scoring
+- ✅ Dashboard now displays live data
+- ✅ Pipeline metrics visible in Grafana
 
 ---
 
 ## 📅 DEVELOPMENT TIMELINE
 
 **May 5, 2026:**
-- ✅ Implemented base Spark sentiment pipeline
-- ✅ Added PostgreSQL persistence
-- ✅ Added initial dashboard
-- ✅ Progress tracking updated
+- ✅ Base Spark sentiment pipeline
+- ✅ PostgreSQL persistence
+- ✅ Initial dashboard
 
 **May 6, 2026:**
-- ✅ Added Reddit bridge and Kafka topic support
-- ✅ Enabled source-aware analytics and persistence
-- ✅ Improved Spark data cleaning and validation
-- 🔄 Polished dashboard filtering and analytics
+- ✅ Reddit bridge + Kafka topic
+- ✅ Source-aware analytics and persistence
+- ✅ Spark data cleaning + validation
+
+**May 7, 2026:**
+- ✅ Added Prometheus + Grafana monitoring stack
+- ✅ Instrumented bridges, collector and Spark with `prometheus_client` metrics
+- ✅ Provisioned 2 Grafana dashboards (Pipeline Health + Sentiment Analytics)
+- ✅ Fixed empty Streamlit dashboard (time window selector, `processed_at` filters, system status panel, auto-refresh)
 
 **Next:**
-- Complete dashboard live display and refresh behavior
-- Add unit and integration tests for Spark and dashboard
-- Expand analytics coverage with source breakdowns
+- Add a separate batch Spark job over HDFS for historical analytics
+- Add unit and integration tests
+- Add Prometheus alert rules
 
 ---
 
 ## 🔧 TECHNICAL IMPLEMENTATION STATUS
 
 ### Core Components
-- **Bluesky Bridge:** ✅ Working
-- **Reddit Bridge:** ✅ Working
-- **Kafka:** ✅ Configured with topic initialization
-- **Spark Streaming:** ✅ Multi-topic ingest and enrichment
+- **Bluesky Bridge:** ✅ Working, exposes `/metrics` on `:8000`
+- **Reddit Bridge:** ✅ Working, exposes `/metrics` on `:8000`
+- **HDFS Collector:** ✅ Working, exposes `/metrics` on `:8000`
+- **Kafka (KRaft):** ✅ With topic initialization
+- **Spark Streaming:** ✅ Multi-topic ingest + enrichment, driver exposes `/metrics`
 - **PostgreSQL:** ✅ Source-aware analytics schema
-- **Streamlit Dashboard:** 🔄 Source filtering and charts implemented
+- **Streamlit Dashboard:** ✅ Live data, time window selector, auto-refresh
+- **Prometheus:** ✅ Scraping all components every 15s
+- **Grafana:** ✅ Auto-provisioned datasources + dashboards
+- **postgres-exporter / kafka-exporter / cAdvisor:** ✅ Wired to Prometheus
 
 ### Dependencies
-- **NLTK VADER:** ✅ Installed and configured
-- **Spark 3.5.0:** ✅ Container ready
-- **Kafka 3.9.1:** ✅ Running with 2 topics
-- **HDFS:** ✅ Configured for raw storage
-- **PostgreSQL 15:** ✅ Analytics database ready
+- **NLTK VADER:** ✅
+- **Spark 3.5.0:** ✅
+- **Kafka 3.9.1:** ✅ — 2 topics
+- **HDFS:** ✅ — raw storage
+- **PostgreSQL 15:** ✅
+- **Prometheus 2.54.1, Grafana 11.2.0:** ✅
 
 ### Data Flow
 ```
-Bluesky / Reddit → Kafka → Spark → PostgreSQL
-                          ↓
-                        HDFS
+Bluesky/Reddit → Bridges → Kafka → Spark Streaming → PostgreSQL → Streamlit
+                              ↓
+                       HDFS Collector → HDFS (raw archive)
+
+All services → /metrics → Prometheus → Grafana
 ```
 
 ---
@@ -128,18 +142,19 @@ Bluesky / Reddit → Kafka → Spark → PostgreSQL
 ## 📝 NOTES & DECISIONS
 
 ### Architecture Decisions
-- **Multi-source ingestion:** Bluesky + Reddit both supported
-- **Source-aware analytics:** `source` column added to all saved data
-- **Text cleaning:** trimmed and normalized before sentiment scoring
-- **Dashboard:** source filter and source-based aggregation charts
+- **Multi-source ingestion** (Bluesky + Reddit)
+- **Source-aware analytics**
+- **Real-time path only** for now (`foreachBatch` writes to Postgres). HDFS is a raw archive for a future batch layer.
+- **Observability:** Prometheus pull model, Grafana provisioned at boot, two ready-made dashboards
+- **Streamlit time filtering:** uses `processed_at` (always set by Spark on ingest) instead of `created_at` so the UI does not show empty for old upstream timestamps
 
 ### Implementation Notes
-- `spark/stream.py` now reads topics from `KAFKA_TOPICS`
-- `postgres-init.sql` supports `source` in aggregates and stats
-- `dashboard/app.py` handles empty selections safely
-- Bridge services now emit consistent payload schemas
+- `spark/stream.py` reads topics from `KAFKA_TOPICS`
+- All Python services start an HTTP server on `:8000` exposing Prometheus metrics
+- Grafana datasource UIDs are `Prometheus` and `SentimentPostgres` and are referenced by the provisioned dashboards
+- Auto-refresh in Streamlit is implemented as a 15s `time.sleep` + `st.rerun()` at the end of the script
 
 ---
 
-*Last Updated: May 6, 2026 - 11:30 PM*  
-*Next Update: After full Streamlit validation and dashboard verification*
+*Last Updated: May 7, 2026*
+*Next Update: After adding batch analytics layer / tests*

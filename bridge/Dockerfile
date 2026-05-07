@@ -3,6 +3,8 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY bridge.py .
 
-RUN pip install --no-cache-dir websockets kafka-python
+RUN pip install --no-cache-dir websockets kafka-python prometheus-client
 
-CMD ["python", "bridge.py"]
+EXPOSE 8000
+
+CMD ["python", "-u", "bridge.py"]
