@@ -34,6 +34,7 @@ CMD ["/opt/spark/bin/spark-submit", \
      "--conf", "spark.executor.memory=512m", \
      "--conf", "spark.executor.memoryOverhead=128m", \
      "--conf", "spark.executor.cores=1", \
-     "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0", \
+    "--repositories", "https://repo.maven.apache.org/maven2", \
+    "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.apache.commons:commons-pool2:2.11.1", \
      "--jars", "/opt/spark/jars/postgresql.jar", \
      "/app/stream.py"]

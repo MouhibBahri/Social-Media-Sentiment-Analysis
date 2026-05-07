@@ -8,6 +8,54 @@ datasources:
     isDefault: true
     editable: true
 
+  - name: ElasticsearchBatch
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: batch_*
+    uid: ElasticsearchBatch
+    jsonData:
+      esVersion: 80
+      interval: Daily
+      timeField: run_at
+    editable: true
+
+  - name: ElasticsearchTopics
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: batch_topics
+    uid: ElasticsearchTopics
+    jsonData:
+      esVersion: 80
+      interval: Daily
+      timeField: run_at
+    editable: true
+
+  - name: ElasticsearchTrends
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: batch_trends
+    uid: ElasticsearchTrends
+    jsonData:
+      esVersion: 80
+      interval: Daily
+      timeField: run_at
+    editable: true
+
+  - name: ElasticsearchEvents
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: batch_events
+    uid: ElasticsearchEvents
+    jsonData:
+      esVersion: 80
+      interval: Daily
+      timeField: run_at
+    editable: true
+
   - name: SentimentPostgres
     type: postgres
     access: proxy

@@ -1,0 +1,66 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Batch Analytics (Topics / Trends / Events)",
+  "uid": "batch-analytics",
+  "schemaVersion": 39,
+  "version": 3,
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "1m",
+  "tags": ["batch","elasticsearch"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Topic docs over time",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTopics"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "count", "id": "1"}],
+          "bucketAggs": [{"type": "date_histogram", "field": "run_at", "id": "2", "settings": {"interval": "auto"}}]
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Trend docs over time",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "count", "id": "1"}],
+          "bucketAggs": [{"type": "date_histogram", "field": "run_at", "id": "2", "settings": {"interval": "auto"}}]
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Event docs over time",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchEvents"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "count", "id": "1"}],
+          "bucketAggs": [{"type": "date_histogram", "field": "run_at", "id": "2", "settings": {"interval": "auto"}}]
+        }
+      ]
+    }
+  ]
+}

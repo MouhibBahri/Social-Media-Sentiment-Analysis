@@ -119,8 +119,12 @@ services:
         hdfs dfsadmin -safemode wait
         echo "Creating Spark checkpoint directory..."
         hdfs dfs -mkdir -p /tmp/spark-sentiment-checkpoint
+        echo "Creating raw and processed batch directories..."
+        hdfs dfs -mkdir -p /bluesky/raw /bluesky/processed
         echo "Setting global permissions for /tmp..."
         hdfs dfs -chmod -R 777 /tmp
+        echo "Setting global permissions for /bluesky..."
+        hdfs dfs -chmod -R 777 /bluesky
         echo "HDFS Initialization complete."
     restart: "no"
 
@@ -165,6 +169,9 @@ services:
     build: ./bridge
     container_name: bluesky-bridge
     hostname: bluesky-bridge
+    depends_on:
+      kafka:
+        condition: service_healthy
     networks:
       - hadoop-net
     ports:
@@ -206,9 +213,13 @@ services:
     depends_on:
       namenode:
         condition: service_healthy
+      hdfs-init:
+        condition: service_completed_successfully
       bluesky-bridge:
         condition: service_started
       kafka-init:
+        condition: service_completed_successfully
+      kafka-init-reddit:
         condition: service_completed_successfully
     restart: unless-stopped
   # ─── Spark Master ────────────────────────────────────────────────────────
@@ -253,6 +264,8 @@ services:
         condition: service_completed_successfully # Ensure permissions are set first
       kafka-init:
         condition: service_completed_successfully
+      kafka-init-reddit:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     volumes:
@@ -260,6 +273,7 @@ services:
       - spark_ivy_cache:/home/spark/.ivy2
     environment:
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - KAFKA_TOPICS=bluesky.posts,reddit.posts
     networks:
       - hadoop-net
       
@@ -298,6 +312,56 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  # ─── Elasticsearch (batch analytics sink) ─────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    container_name: elasticsearch
+    hostname: elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    networks:
+      - hadoop-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Kibana removed — Grafana will use Elasticsearch indices for batch dashboards
+
+  # ─── Batch job: Spark-based HDFS -> Elasticsearch processor ───────────
+  batch-spark:
+    build: ./batch-spark
+    container_name: batch-spark
+    hostname: batch-spark
+    environment:
+      HDFS_HOST: namenode
+      HDFS_PORT: "9870"
+      HDFS_RAW_DIR: /bluesky/raw
+      HDFS_OUT_DIR: /bluesky/processed
+      ELASTIC_URL: http://elasticsearch:9200
+      ELASTIC_INDEX_TOPICS: batch_topics
+      ELASTIC_INDEX_TRENDS: batch_trends
+      ELASTIC_INDEX_EVENTS: batch_events
+      LOOKBACK_DAYS: "90"
+      BATCH_INTERVAL_SECONDS: "300"
+      CLUSTERING_K: "50"
+      EVENT_WINDOW_HOURS: "6"
+    depends_on:
+      hdfs-init:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    restart: "no"
 
   # ─── Elasticsearch (batch analytics sink) ─────────────────────────────────
   # (Elasticsearch/Kibana and batch indexing removed — kept Reddit→Kafka→HDFS only)
