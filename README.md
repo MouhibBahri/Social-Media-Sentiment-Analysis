@@ -1,8 +1,15 @@
 # 🌐 Social Sentiment Analysis — Big Data Streaming Pipeline
 
-A real-time and historical sentiment analysis platform built on a **Lambda-style architecture**. The system streams live posts from Bluesky, processes them through a distributed pipeline, stores them in HDFS, and performs real-time analytics using Apache Spark Structured Streaming.
+A real-time and historical sentiment analysis platform built on a **Lambda-style architecture**. The system ingests live posts from Bluesky and Reddit, writes raw data to HDFS, performs Spark streaming analytics, persists sentiment summaries to PostgreSQL, and runs batch recomputation for topic discovery and anomaly detection.
 
-This repository now includes a dedicated batch recomputation layer (Lambda batch) that consumes only raw JSONL posts in HDFS, performs topic discovery, historical trend and anomaly detection, and event reconstruction, then writes processed datasets back to HDFS and indexes them into Elasticsearch for Grafana visualisation.
+This repository now includes a complete containerized pipeline with:
+- Kafka ingestion for Bluesky and Reddit feeds
+- HDFS raw storage and partitioned batch processing
+- Apache Spark Structured Streaming for realtime analytics
+- PostgreSQL persistence for sentiment analytics
+- Elasticsearch batch sink for historical analytics
+- Grafana dashboards for batch trend, topic, and event visualization
+- Prometheus monitoring for Spark and collector metrics
 
 ---
 
@@ -22,11 +29,11 @@ It demonstrates a full end-to-end **Big Data streaming architecture**.
 ## High-level pipeline
 
 ```
-Bluesky Stream
+Bluesky / Reddit Stream
    ↓
-WebSocket Bridge (Python)
+WebSocket / REST Bridge
    ↓
-TCP Socket (port 9999)
+TCP Socket / Kafka producer
    ↓
 HDFS Collector (buffering + batching)
    ↓
@@ -36,6 +43,20 @@ Apache Spark Structured Streaming
    ↓
 Real-time analytics output
 ```
+
+## Core services
+
+This system includes the following containerized services:
+- `kafka`, `kafka-init`, `kafka-init-reddit` — Kafka broker and topic initialization
+- `bluesky-bridge` — Bluesky WebSocket ingestion
+- `reddit-bridge` — Reddit polling into Kafka
+- `hdfs-collector` — TCP ingestion and HDFS JSONL writes
+- `namenode`, `datanode1`, `datanode2` — HDFS storage cluster
+- `spark-master`, `spark-worker`, `spark-app` — Spark streaming and batch processing
+- `postgres` — sentiment analytics persistence
+- `elasticsearch` — batch analytics sink
+- `batch-spark` — batch recomputation job
+- `prometheus`, `grafana` — monitoring and visualization
 
 ## 🗂️ Batch Outputs (examples)
 
@@ -146,7 +167,11 @@ Batch outputs are written back to HDFS (see paths above) and bulk-indexed into E
 - `batch_trends` — per-keyword/topic historical time series and detected bursts
 - `batch_events` — reconstructed events with start/end and intensity
 
-Grafana is provisioned to use Elasticsearch as a datasource and includes a sample dashboard `monitoring/grafana/dashboards/batch-analytics.json` that visualizes topic evolution, trend spikes, and event timelines.
+Grafana is provisioned to use Elasticsearch as a datasource and includes batch dashboards under `monitoring/grafana/dashboards/`, including:
+
+- `trend-radar.json` for exploding trend anomalies
+- `topic-share.json` for topic market share
+- `event-timeline.json` for reconstructed event lifecycle and intensity
 
 ---
 
@@ -166,21 +191,38 @@ Grafana is provisioned to use Elasticsearch as a datasource and includes a sampl
 
 ```
 Social-Media-Sentiment-Analysis
+├── batch-spark/
+│   ├── batch_job.py
+│   ├── Dockerfile
+│   └── requirements.txt
 ├── bridge/
 │   ├── Dockerfile
 │   └── bridge.py
 ├── collector/
 │   ├── Dockerfile
 │   └── hdfs_collector.py
-├── spark/
-│   ├── Dockerfile
-│   └── stream.py
 ├── hadoop-config/
 │   ├── core-site.xml
 │   └── hdfs-site.xml
+├── monitoring/
+│   ├── grafana/
+│   │   ├── dashboards/
+│   │   └── provisioning/
+│   └── prometheus/
+│       └── prometheus.yml
+├── reddit-bridge/
+│   ├── Dockerfile
+│   └── reddit_bridge.py
+├── spark/
+│   ├── Dockerfile
+│   ├── requirements-spark.txt
+│   └── stream.py
+├── Guides/
 ├── docker-compose.yml
 ├── hadoop.env
-└── README.md
+├── postgres-init.sql
+├── README.md
+└── STATE.md
 ```
 
 ---
@@ -206,10 +248,14 @@ docker compose up --build
 
 # 🌐 Access Interfaces
 
-| Service        | URL |
-|----------------|-----|
-| HDFS NameNode  | http://localhost:9870 |
-| Spark UI       | http://localhost:8080 |
+| Service          | URL |
+|------------------|-----|
+| HDFS NameNode    | http://localhost:9870 |
+| Spark UI         | http://localhost:8080 |
+| Grafana          | http://localhost:3000 |
+| Prometheus       | http://localhost:9090 |
+| Elasticsearch    | http://localhost:9200 |
+| PostgreSQL       | postgres://localhost:5437 |
 
 ---
 

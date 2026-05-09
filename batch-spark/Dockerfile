@@ -7,9 +7,10 @@ COPY requirements.txt ./
 # Run installs as root (image default user is non-root), then switch back to spark user
 USER root
 ENV PIP_CACHE_DIR=/tmp/.pip-cache
+ENV PIP_DEFAULT_TIMEOUT=100
 RUN python3 -m pip install --upgrade pip setuptools wheel && \
     apt-get update && apt-get install -y build-essential wget git libsndfile1 && \
-    pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --default-timeout=100 --retries=10 --no-cache-dir -r requirements.txt && \
     apt-get remove -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* /tmp/.pip-cache
 
 COPY batch_job.py ./

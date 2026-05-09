@@ -301,17 +301,6 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  streamlit-dashboard:
-    build: ./dashboard
-    container_name: streamlit-dashboard
-    ports:
-      - "8501:8501"
-    networks:
-      - hadoop-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
 
   # ─── Elasticsearch (batch analytics sink) ─────────────────────────────────
   elasticsearch:
@@ -321,7 +310,7 @@ services:
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      ES_JAVA_OPTS: "-Xms2g -Xmx2g"
     ports:
       - "9200:9200"
     networks:
@@ -334,7 +323,6 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # Kibana removed — Grafana will use Elasticsearch indices for batch dashboards
 
   # ─── Batch job: Spark-based HDFS -> Elasticsearch processor ───────────
   batch-spark:
@@ -363,8 +351,6 @@ services:
       - hadoop-net
     restart: "no"
 
-  # ─── Elasticsearch (batch analytics sink) ─────────────────────────────────
-  # (Elasticsearch/Kibana and batch indexing removed — kept Reddit→Kafka→HDFS only)
 
   # ─── Prometheus (metrics scraper) ─────────────────────────────────────────
   prometheus:
@@ -402,8 +388,12 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - prometheus
-      - postgres
+      prometheus:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     networks:
       - hadoop-net
     restart: unless-stopped
