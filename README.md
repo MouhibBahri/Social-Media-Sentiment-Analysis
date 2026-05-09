@@ -1,6 +1,15 @@
 # 🌐 Social Sentiment Analysis — Big Data Streaming Pipeline
 
-A real-time and historical sentiment analysis platform built on a **Lambda-style architecture**. The system streams live posts from Bluesky, processes them through a distributed pipeline, stores them in HDFS, and performs real-time analytics using Apache Spark Structured Streaming.
+A real-time and historical sentiment analysis platform built on a **Lambda-style architecture**. The system ingests live posts from Bluesky and Reddit, writes raw data to HDFS, performs Spark streaming analytics, persists sentiment summaries to PostgreSQL, and runs batch recomputation for topic discovery and anomaly detection.
+
+This repository now includes a complete containerized pipeline with:
+- Kafka ingestion for Bluesky and Reddit feeds
+- HDFS raw storage and partitioned batch processing
+- Apache Spark Structured Streaming for realtime analytics
+- PostgreSQL persistence for sentiment analytics
+- Elasticsearch batch sink for historical analytics
+- Grafana dashboards for batch trend, topic, and event visualization
+- Prometheus monitoring for Spark and collector metrics
 
 ---
 
@@ -20,11 +29,11 @@ It demonstrates a full end-to-end **Big Data streaming architecture**.
 ## High-level pipeline
 
 ```
-Bluesky Stream
+Bluesky / Reddit Stream
    ↓
-WebSocket Bridge (Python)
+WebSocket / REST Bridge
    ↓
-TCP Socket (port 9999)
+TCP Socket / Kafka producer
    ↓
 HDFS Collector (buffering + batching)
    ↓
@@ -33,6 +42,59 @@ HDFS Data Lake (partitioned storage)
 Apache Spark Structured Streaming
    ↓
 Real-time analytics output
+```
+
+## Core services
+
+This system includes the following containerized services:
+- `kafka`, `kafka-init`, `kafka-init-reddit` — Kafka broker and topic initialization
+- `bluesky-bridge` — Bluesky WebSocket ingestion
+- `reddit-bridge` — Reddit polling into Kafka
+- `hdfs-collector` — TCP ingestion and HDFS JSONL writes
+- `namenode`, `datanode1`, `datanode2` — HDFS storage cluster
+- `spark-master`, `spark-worker`, `spark-app` — Spark streaming and batch processing
+- `postgres` — sentiment analytics persistence
+- `elasticsearch` — batch analytics sink
+- `batch-spark` — batch recomputation job
+- `prometheus`, `grafana` — monitoring and visualization
+
+## 🗂️ Batch Outputs (examples)
+
+`batch_topics` (one document per discovered topic):
+
+```json
+{
+   "cluster_id": 12,
+   "count": 234,
+   "keywords": ["iphone", "leak", "apple event"],
+   "sample_post_ids": ["p123", "p456"],
+   "run_at": "2026-05-07T12:00:00Z"
+}
+```
+
+`batch_trends` (keyword historical stats + bursts):
+
+```json
+{
+   "keyword": "iphone",
+   "mean": 12.3,
+   "std": 5.1,
+   "bursts": ["2026-05-05", "2026-05-06"],
+   "history": [{"day": "2026-05-05", "count": 47}, {"day": "2026-05-06", "count": 58}]
+}
+```
+
+`batch_events` (reconstructed event cluster):
+
+```json
+{
+   "cluster_id": 12,
+   "start": "2026-05-06T08:10:00Z",
+   "end": "2026-05-06T09:30:00Z",
+   "count": 342,
+   "intensity": 18.49,
+   "sample_ids": ["p987", "p654"]
+}
 ```
 
 ---
@@ -71,6 +133,18 @@ Real-time analytics output
 - Web UI available at:
   - http://localhost:9870
 
+### Batch processed outputs (HDFS)
+
+The batch jobs write processed datasets to HDFS under `/bluesky/processed` partitioned by run timestamp and type:
+
+```
+/bluesky/processed/topics/YYYY-MM-DD/HH/batch_<ts>.jsonl
+/bluesky/processed/trends/YYYY-MM-DD/HH/batch_<ts>.jsonl
+/bluesky/processed/events/YYYY-MM-DD/HH/batch_<ts>.jsonl
+```
+
+Each file contains JSONL documents representing discovered topics, detected trends/anomalies, and reconstructed events respectively. For production workloads prefer Parquet for columnar storage and easier analytics.
+
 ---
 
 ## 🟣 4. Apache Spark Streaming
@@ -78,6 +152,26 @@ Real-time analytics output
 - Uses Structured Streaming API
 - Performs real-time aggregation
 - Outputs results to console
+
+## 🔁 Batch Layer (Spark)
+
+The batch layer is implemented as a Spark job (`batch-spark/batch_job.py`) and performs the following daily or weekly recomputations from raw HDFS data only (no streaming-derived summaries are required):
+
+- Topic discovery: preprocess raw text, compute embeddings (`sentence-transformers`), cluster posts into dynamic topics, and extract representative keywords and sample posts per topic.
+- Historical trend & anomaly detection: compute keyword/topic frequencies across time buckets, estimate long-term baselines (mean/std) and surface burst/baseline deviations.
+- Event reconstruction: group temporally and semantically similar posts into event clusters with start/end times, counts and intensity scores.
+
+Batch outputs are written back to HDFS (see paths above) and bulk-indexed into Elasticsearch indices:
+
+- `batch_topics` — topic metadata, keywords and counts
+- `batch_trends` — per-keyword/topic historical time series and detected bursts
+- `batch_events` — reconstructed events with start/end and intensity
+
+Grafana is provisioned to use Elasticsearch as a datasource and includes batch dashboards under `monitoring/grafana/dashboards/`, including:
+
+- `trend-radar.json` for exploding trend anomalies
+- `topic-share.json` for topic market share
+- `event-timeline.json` for reconstructed event lifecycle and intensity
 
 ---
 
@@ -97,21 +191,38 @@ Real-time analytics output
 
 ```
 Social-Media-Sentiment-Analysis
+├── batch-spark/
+│   ├── batch_job.py
+│   ├── Dockerfile
+│   └── requirements.txt
 ├── bridge/
 │   ├── Dockerfile
 │   └── bridge.py
 ├── collector/
 │   ├── Dockerfile
 │   └── hdfs_collector.py
-├── spark/
-│   ├── Dockerfile
-│   └── stream.py
 ├── hadoop-config/
 │   ├── core-site.xml
 │   └── hdfs-site.xml
+├── monitoring/
+│   ├── grafana/
+│   │   ├── dashboards/
+│   │   └── provisioning/
+│   └── prometheus/
+│       └── prometheus.yml
+├── reddit-bridge/
+│   ├── Dockerfile
+│   └── reddit_bridge.py
+├── spark/
+│   ├── Dockerfile
+│   ├── requirements-spark.txt
+│   └── stream.py
+├── Guides/
 ├── docker-compose.yml
 ├── hadoop.env
-└── README.md
+├── postgres-init.sql
+├── README.md
+└── STATE.md
 ```
 
 ---
@@ -137,10 +248,14 @@ docker compose up --build
 
 # 🌐 Access Interfaces
 
-| Service        | URL |
-|----------------|-----|
-| HDFS NameNode  | http://localhost:9870 |
-| Spark UI       | http://localhost:8080 |
+| Service          | URL |
+|------------------|-----|
+| HDFS NameNode    | http://localhost:9870 |
+| Spark UI         | http://localhost:8080 |
+| Grafana          | http://localhost:3000 |
+| Prometheus       | http://localhost:9090 |
+| Elasticsearch    | http://localhost:9200 |
+| PostgreSQL       | postgres://localhost:5437 |
 
 ---
 

@@ -1,0 +1,70 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Topic Share",
+  "uid": "batch-topic-share",
+  "description": "Visualize the relative market share of discovered conversation topics.",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "1m",
+  "tags": ["batch", "elasticsearch", "topics", "share"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "piechart",
+      "title": "Topic share by post volume",
+      "id": 1,
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTopics"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "*",
+          "metrics": [
+            {"type": "sum", "field": "count", "id": "1"}
+          ],
+          "bucketAggs": [
+            {
+              "type": "terms",
+              "field": "topic_name.keyword",
+              "id": "2",
+              "settings": {"size": 15, "order": "desc", "orderBy": "1", "min_doc_count": 1}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Topic share and post distribution",
+      "id": 2,
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTopics"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "*",
+          "metrics": [
+            {"type": "avg", "field": "topic_share", "id": "1"},
+            {"type": "sum", "field": "count", "id": "2"}
+          ],
+          "bucketAggs": [
+            {
+              "type": "terms",
+              "field": "topic_name.keyword",
+              "id": "3",
+              "settings": {"size": 15, "order": "desc", "orderBy": "2", "min_doc_count": 1}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

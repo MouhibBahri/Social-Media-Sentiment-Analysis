@@ -1,0 +1,105 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Batch Historical Trend & Anomaly Analytics",
+  "uid": "batch-trend-anomaly",
+  "description": "Historical trend and anomaly views recomputed from immutable HDFS batch outputs and stored in Elasticsearch.",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "1m",
+  "tags": ["batch", "elasticsearch", "trends", "anomalies", "historical"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Current activity vs historical baseline",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "avg", "field": "current_count", "id": "1"}],
+          "bucketAggs": [
+            {"type": "date_histogram", "field": "run_at", "id": "2", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ]
+        },
+        {
+          "refId": "B",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "avg", "field": "baseline_mean", "id": "1"}],
+          "bucketAggs": [
+            {"type": "date_histogram", "field": "run_at", "id": "2", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Spike score evolution",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "avg", "field": "zscore", "id": "1"}],
+          "bucketAggs": [
+            {"type": "date_histogram", "field": "run_at", "id": "2", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "barchart",
+      "title": "Spike detection by keyword",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "*",
+          "metrics": [{"type": "avg", "field": "zscore", "id": "1"}],
+          "bucketAggs": [
+            {"type": "terms", "field": "keyword.keyword", "id": "2", "settings": {"size": 10, "order": "desc", "orderBy": "_count", "min_doc_count": 1}}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Trending topics leaderboard",
+      "id": 4,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "*",
+          "metrics": [
+            {"type": "avg", "field": "deviation", "id": "1"},
+            {"type": "avg", "field": "zscore", "id": "2"},
+            {"type": "avg", "field": "current_count", "id": "3"},
+            {"type": "avg", "field": "baseline_mean", "id": "4"}
+          ],
+          "bucketAggs": [
+            {"type": "terms", "field": "keyword.keyword", "id": "5", "settings": {"size": 15, "order": "desc", "orderBy": "_count", "min_doc_count": 1}}
+          ]
+        }
+      ]
+    }
+  ]
+}

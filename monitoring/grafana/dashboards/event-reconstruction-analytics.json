@@ -1,0 +1,79 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Batch Event Reconstruction Analytics",
+  "uid": "batch-event-reconstruction",
+  "description": "Historical event reconstruction views produced from immutable HDFS recomputation and indexed into Elasticsearch.",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "1m",
+  "tags": ["batch", "elasticsearch", "events", "historical"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Reconstructed event timelines",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchEvents"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "count", "id": "1"}],
+          "bucketAggs": [
+            {"type": "date_histogram", "field": "start", "id": "2", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Event intensity evolution over time",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchEvents"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "query": "*",
+          "metrics": [{"type": "avg", "field": "intensity", "id": "1"}],
+          "bucketAggs": [
+            {"type": "date_histogram", "field": "start", "id": "2", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Event metadata: keywords, volume, platforms, peak timestamps",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchEvents"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "*",
+          "metrics": [
+            {"type": "avg", "field": "count", "id": "1"},
+            {"type": "avg", "field": "duration_minutes", "id": "2"},
+            {"type": "avg", "field": "intensity", "id": "3"},
+            {"type": "avg", "field": "platform_count", "id": "4"}
+          ],
+          "bucketAggs": [
+            {"type": "terms", "field": "event_name.keyword", "id": "5", "settings": {"size": 10, "order": "desc", "orderBy": "_count", "min_doc_count": 1}},
+            {"type": "terms", "field": "peak_timestamp", "id": "6", "settings": {"size": 10, "order": "desc", "orderBy": "_count", "min_doc_count": 1}}
+          ]
+        }
+      ]
+    }
+  ]
+}

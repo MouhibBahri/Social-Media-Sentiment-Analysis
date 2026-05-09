@@ -1,0 +1,96 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Trend Radar",
+  "uid": "batch-trend-radar",
+  "description": "Track exploding keywords from batch trend anomaly detection.",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "1m",
+  "tags": ["batch", "elasticsearch", "trends", "anomaly"],
+  "timezone": "browser",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "table",
+      "title": "Exploding trends (anomalies only)",
+      "id": 1,
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "is_anomaly:true",
+          "metrics": [
+            {"type": "avg", "field": "zscore", "id": "1"},
+            {"type": "avg", "field": "deviation_pct", "id": "2"},
+            {"type": "avg", "field": "current_count", "id": "3"}
+          ],
+          "bucketAggs": [
+            {
+              "type": "terms",
+              "field": "keyword.keyword",
+              "id": "4",
+              "settings": {"size": 15, "order": "desc", "orderBy": "1", "min_doc_count": 1}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Top anomaly zscore",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "is_anomaly:true",
+          "metrics": [
+            {"type": "max", "field": "zscore", "id": "1"}
+          ],
+          "bucketAggs": [
+            {
+              "type": "terms",
+              "field": "keyword.keyword",
+              "id": "2",
+              "settings": {"size": 10, "order": "desc", "orderBy": "1", "min_doc_count": 1}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Anomaly share by keyword",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "datasource": {"type": "elasticsearch", "uid": "ElasticsearchTrends"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "query": "is_anomaly:true",
+          "metrics": [
+            {"type": "sum", "field": "current_count", "id": "1"}
+          ],
+          "bucketAggs": [
+            {
+              "type": "terms",
+              "field": "keyword.keyword",
+              "id": "2",
+              "settings": {"size": 10, "order": "desc", "orderBy": "1", "min_doc_count": 1}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
